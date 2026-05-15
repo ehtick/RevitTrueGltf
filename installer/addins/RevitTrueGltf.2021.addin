@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Assembly>C:\ProgramData\Autodesk\ApplicationPlugins\RevitTrueGltf\2021\RevitTrueGltf.dll</Assembly>
+    <ClientId>B6E0B3F1-3C34-4B7E-971B-6E3F405A12D5</ClientId>
+    <FullClassName>RevitTrueGltf.ExportGltfCommand</FullClassName>
+    <Text>Export True glTF</Text>
+    <Description>Export the active 3D view to an advanced glTF file with PBR materials.</Description>
+    <VendorId>RevitTrueGltf</VendorId>
+    <VendorDescription>RevitTrueGltf Open Source Project</VendorDescription>
+    <VisibilityMode>AlwaysVisible</VisibilityMode>
+  </AddIn>
+</RevitAddIns>

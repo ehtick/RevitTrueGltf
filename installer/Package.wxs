@@ -1,0 +1,61 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!-- 
+    UpgradeCode is the persistent identity of the installer. Changing it will break major upgrades.
+    This ensures that subsequent releases can seamlessly overwrite older versions.
+  -->
+  <Package Name="RevitTrueGltf" 
+           Manufacturer="ryanzll" 
+           Version="1.0.0.0" 
+           UpgradeCode="4C5B32A1-0F9E-4B7E-971B-6E3F405A12D5" 
+           Scope="perMachine">
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <!-- Basic installer media configuration -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Reference standard WiX UI tree for feature selection -->
+    <ui:WixUI Id="WixUI_FeatureTree" />
+
+    <!-- Skip the License Agreement step by remapping UI events within a UI block -->
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="3" Condition="1" />
+      <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="1" />
+    </UI>
+
+    <!-- ============================================== -->
+    <!-- Feature Tree: Components visible in the UI selection tree -->
+    <!-- ============================================== -->
+    <Feature Id="CoreFeature" Title="Core Components (Required)" Description="Shared libraries and tools required by all Revit versions." Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="SharedComponents" />
+    </Feature>
+
+    <Feature Id="Revit2020Feature" Title="Revit 2020 Support" Level="1">
+      <ComponentGroupRef Id="Revit2020Components" />
+    </Feature>
+
+    <Feature Id="Revit2021Feature" Title="Revit 2021 Support" Level="1">
+      <ComponentGroupRef Id="Revit2021Components" />
+    </Feature>
+
+    <Feature Id="Revit2022Feature" Title="Revit 2022 Support" Level="1">
+      <ComponentGroupRef Id="Revit2022Components" />
+    </Feature>
+
+    <Feature Id="Revit2023Feature" Title="Revit 2023 Support" Level="1">
+      <ComponentGroupRef Id="Revit2023Components" />
+    </Feature>
+
+    <Feature Id="Revit2024Feature" Title="Revit 2024 Support" Level="1">
+      <ComponentGroupRef Id="Revit2024Components" />
+    </Feature>
+
+    <Feature Id="Revit2025Feature" Title="Revit 2025 Support" Level="1">
+      <ComponentGroupRef Id="Revit2025Components" />
+    </Feature>
+
+    <Feature Id="Revit2026Feature" Title="Revit 2026 Support" Level="1">
+      <ComponentGroupRef Id="Revit2026Components" />
+    </Feature>
+
+  </Package>
+</Wix>

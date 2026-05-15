@@ -68,12 +68,12 @@ namespace RevitTrueGltf.Utils
         public static string GetParameterUnitType(Definition definition)
         {
             if (definition == null) return "None";
-#if REVIT2021 || REVIT2022 || REVIT2023 || REVIT2024 || REVIT2025 || REVIT2026
-            // UnitType concept was replaced by SpecTypeId/ForgeTypeId
-            try {
-                var typeId = definition.GetSpecTypeId();
-                return typeId?.TypeId ?? "None";
-            } catch { return "None"; }
+#if REVIT2023 || REVIT2024 || REVIT2025 || REVIT2026
+            // In Revit 2023+, GetSpecTypeId() was replaced by GetDataType()
+            return definition.GetDataType()?.TypeId ?? "None";
+#elif REVIT2021 || REVIT2022
+            // In Revit 2021-2022, UnitType was replaced by SpecTypeId
+            return definition.GetSpecTypeId()?.TypeId ?? "None";
 #else
             // Legacy versions (Revit 2020)
             try {

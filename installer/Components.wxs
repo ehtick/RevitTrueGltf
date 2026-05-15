@@ -1,0 +1,108 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    
+    <!-- ============================================== -->
+    <!-- Shared file groups: Tools and dependent libraries -->
+    <!-- ============================================== -->
+    <ComponentGroup Id="SharedComponents">
+      <!-- Shared Tools -->
+      <Component Directory="ToolsFolder">
+        <File Source="..\bin\2024\gltfpack.exe" />
+      </Component>
+
+      <!-- .NET Framework dependencies (extracted from the most complete 2024 directory) -->
+      <ComponentGroupRef Id="NetFxLibs" />
+      
+      <!-- .NET 8 dependencies (extracted from the most complete 2026 directory) -->
+      <ComponentGroupRef Id="Net8Libs" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="NetFxLibs" Directory="NetFxLibFolder">
+      <Files Include="..\bin\2024\*.dll" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="Net8Libs" Directory="Net8LibFolder">
+      <Files Include="..\bin\2026\*.dll" />
+      <Files Include="..\bin\2026\*.json" />
+    </ComponentGroup>
+
+    <!-- ============================================== -->
+    <!-- Version-specific component groups: Main DLL and Addin manifest -->
+    <!-- ============================================== -->
+
+    <!-- Revit 2020 -->
+    <ComponentGroup Id="Revit2020Components">
+      <Component Directory="Folder2020">
+        <File Source="..\bin\2020\RevitTrueGltf.dll" />
+      </Component>
+      <Component Directory="Addin2020Folder">
+        <File Source="addins\RevitTrueGltf.2020.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2021 -->
+    <ComponentGroup Id="Revit2021Components">
+      <Component Directory="Folder2021">
+        <File Source="..\bin\2021\RevitTrueGltf.dll" />
+      </Component>
+      <Component Directory="Addin2021Folder">
+        <File Source="addins\RevitTrueGltf.2021.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2022 -->
+    <ComponentGroup Id="Revit2022Components">
+      <Component Directory="Folder2022">
+        <File Source="..\bin\2022\RevitTrueGltf.dll" />
+      </Component>
+      <Component Directory="Addin2022Folder">
+        <File Source="addins\RevitTrueGltf.2022.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2023 -->
+    <ComponentGroup Id="Revit2023Components">
+      <Component Directory="Folder2023">
+        <File Source="..\bin\2023\RevitTrueGltf.dll" />
+      </Component>
+      <Component Directory="Addin2023Folder">
+        <File Source="addins\RevitTrueGltf.2023.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2024 -->
+    <ComponentGroup Id="Revit2024Components">
+      <Component Directory="Folder2024">
+        <File Source="..\bin\2024\RevitTrueGltf.dll" />
+      </Component>
+      <Component Directory="Addin2024Folder">
+        <File Source="addins\RevitTrueGltf.2024.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2025 -->
+    <ComponentGroup Id="Revit2025Components">
+      <Component Directory="Folder2025">
+        <File Source="..\bin\2025\RevitTrueGltf.dll" />
+        <File Source="..\bin\2025\RevitTrueGltf.deps.json" />
+        <File Source="..\bin\2025\RevitTrueGltf.runtimeconfig.json" />
+      </Component>
+      <Component Directory="Addin2025Folder">
+        <File Source="addins\RevitTrueGltf.2025.addin" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Revit 2026 -->
+    <ComponentGroup Id="Revit2026Components">
+      <Component Directory="Folder2026">
+        <File Source="..\bin\2026\RevitTrueGltf.dll" />
+        <File Source="..\bin\2026\RevitTrueGltf.deps.json" />
+        <File Source="..\bin\2026\RevitTrueGltf.runtimeconfig.json" />
+      </Component>
+      <Component Directory="Addin2026Folder">
+        <File Source="addins\RevitTrueGltf.2026.addin" />
+      </Component>
+    </ComponentGroup>
+
+  </Fragment>
+</Wix>

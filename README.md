@@ -105,7 +105,41 @@ Once you have the `.dll` and `.addin` files from Step 1:
 2. **Launch Revit** and open a 3D view. 
 3. Go to the **Add-Ins > External Tools** ribbon and click **Export True glTF**.
 
-## 5. Open-Source Projects Used
+## 5. Building the Installer (MSI)
+
+This project uses **WiX Toolset v5** to create a single multi-version installer that supports Revit 2020 through 2026.
+
+### Prerequisites
+Install the WiX Toolset via the .NET tool CLI:
+```cmd
+dotnet tool install --global wix
+```
+
+### Build Steps
+1. **Compile Revit Versions:** Run the root build script to generate binaries for all supported years:
+   ```cmd
+   build.bat
+   ```
+2. **Generate MSI:** Build the installer project:
+   ```cmd
+   dotnet build installer\RevitTrueGltf.Installer.wixproj -c Release
+   ```
+3. **Output:** The final installer is located at:
+   `installer\bin\x64\Release\RevitTrueGltf.msi`
+
+## 6. Default Installation Paths
+
+When using the MSI installer, the plugin is deployed to the standard Autodesk directory for all users:
+
+- **Plugin Core & Binaries:**
+  `%ProgramData%\Autodesk\ApplicationPlugins\RevitTrueGltf\`
+  - `lib/`: Shared dependencies (netfx/net8)
+  - `tools/`: Shared tools (e.g., gltfpack.exe)
+  - `{Year}/`: Version-specific plugin assemblies
+- **Revit Addin Manifests:**
+  `%ProgramData%\Autodesk\Revit\Addins\{Year}\RevitTrueGltf.{Year}.addin`
+
+## 7. Open-Source Projects Used
 
 The successful build of this plugin relies on the following excellent open-source libraries. We highly appreciate their contributions:
 

@@ -68,13 +68,30 @@ namespace RevitTrueGltf
         private void RunGltfpack(string inputPath, string outputPath)
         {
             string assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            
+            // 1. Check local folder (Development / Direct deployment)
             string gltfpackExe = Path.Combine(assemblyDir, "gltfpack.exe");
+
+            // 2. Check shared tools folder (Production / Installer structure)
+            if (!File.Exists(gltfpackExe))
+            {
+                string parentDir = Directory.GetParent(assemblyDir)?.FullName;
+                if (!string.IsNullOrEmpty(parentDir))
+                {
+                    string toolsPath = Path.Combine(parentDir, "tools", "gltfpack.exe");
+                    if (File.Exists(toolsPath))
+                    {
+                        gltfpackExe = toolsPath;
+                    }
+                }
+            }
 
             if (!File.Exists(gltfpackExe))
                 throw new FileNotFoundException(
-                    "gltfpack.exe was not found next to the plugin assembly. " +
-                    "Make sure the EveryBIM.gltfpack.Binaries NuGet package is installed.",
-                    gltfpackExe);
+                    "gltfpack.exe was not found. Looked in: \n" +
+                    $"- Local: {Path.Combine(assemblyDir, "gltfpack.exe")}\n" +
+                    $"- Tools: {Path.Combine(Directory.GetParent(assemblyDir)?.FullName ?? "", "tools", "gltfpack.exe")}",
+                    "gltfpack.exe");
 
             var args = new StringBuilder();
             args.Append($"-i \"{inputPath}\" -o \"{outputPath}\"");

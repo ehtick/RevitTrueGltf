@@ -1,0 +1,15 @@
+<Project Sdk="WixToolset.Sdk/5.0.0">
+  <PropertyGroup>
+    <OutputName>RevitTrueGltf</OutputName>
+    <Platform>x64</Platform>
+    <InstallerVersion>1.0.0.0</InstallerVersion>
+    <WixOsmfAcceptEula>true</WixOsmfAcceptEula>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WiX UI Extension: used for the WixUI_FeatureTree installation interface -->
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.0" />
+    <!-- WiX Util Extension: used for registry searches and other extended functions -->
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.0" />
+  </ItemGroup>
+</Project>

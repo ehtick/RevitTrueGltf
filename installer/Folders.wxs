@@ -1,0 +1,51 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!-- Use CommonAppDataFolder (%ProgramData%) directory, suitable for perMachine installation for all users -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="AutodeskFolder" Name="Autodesk">
+        
+        <!-- ============================================== -->
+        <!-- 1. Plugin installation directory: ApplicationPlugins\RevitTrueGltf -->
+        <!-- ============================================== -->
+        <Directory Id="AppPluginsFolder" Name="ApplicationPlugins">
+          <Directory Id="INSTALLFOLDER" Name="RevitTrueGltf">
+            
+            <!-- Shared library directory (Option B) -->
+            <Directory Id="LibFolder" Name="lib">
+              <Directory Id="NetFxLibFolder" Name="netfx" />
+              <Directory Id="Net8LibFolder" Name="net8" />
+            </Directory>
+            
+            <!-- Shared tools directory -->
+            <Directory Id="ToolsFolder" Name="tools" />
+            
+            <!-- Version-specific DLL directories -->
+            <Directory Id="Folder2020" Name="2020" />
+            <Directory Id="Folder2021" Name="2021" />
+            <Directory Id="Folder2022" Name="2022" />
+            <Directory Id="Folder2023" Name="2023" />
+            <Directory Id="Folder2024" Name="2024" />
+            <Directory Id="Folder2025" Name="2025" />
+            <Directory Id="Folder2026" Name="2026" />
+          </Directory>
+        </Directory>
+
+        <!-- ============================================== -->
+        <!-- 2. Revit auto-load manifest directory: Revit\Addins\20xx -->
+        <!-- ============================================== -->
+        <Directory Id="RevitFolder" Name="Revit">
+          <Directory Id="AddinsFolder" Name="Addins">
+            <Directory Id="Addin2020Folder" Name="2020" />
+            <Directory Id="Addin2021Folder" Name="2021" />
+            <Directory Id="Addin2022Folder" Name="2022" />
+            <Directory Id="Addin2023Folder" Name="2023" />
+            <Directory Id="Addin2024Folder" Name="2024" />
+            <Directory Id="Addin2025Folder" Name="2025" />
+            <Directory Id="Addin2026Folder" Name="2026" />
+          </Directory>
+        </Directory>
+
+      </Directory>
+    </StandardDirectory>
+  </Fragment>
+</Wix>
