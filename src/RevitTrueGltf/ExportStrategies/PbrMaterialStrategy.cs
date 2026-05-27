@@ -6,6 +6,7 @@ using SharpGLTF.Materials;
 using SharpGLTF.Memory;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 
@@ -51,21 +52,35 @@ namespace RevitTrueGltf.ExportStrategies
 
         // ── IMaterialStrategy ──────────────────────────────────────────────────────────
 
-        public MaterialBuilder Build(MaterialNode node)
+        public MaterialBuildResult Build(MaterialNode node)
         {
             if (node == null)
                 return _colorFallback.Build(node);
 
             var appearance = node.GetAppearance();
-            if (appearance == null)
+            // node.MaterialId == ElementId.InvalidElementId, maybe it is by category
+            if (appearance == null || node.MaterialId == ElementId.InvalidElementId)
+            {
                 return _colorFallback.Build(node);
+            }
 
             var builder = new MaterialBuilder(node.NodeName);
 
             // for material similar to Glass
             if (appearance.Name == "GlazingSchema")
             {
-                return BuildGlazingMaterial(appearance, builder) ? builder : _colorFallback.Build(node);
+                return BuildGlazingMaterial(appearance, builder)
+                    ? new MaterialBuildResult { Material = builder, TextureScale = Vector2.One }
+                    : _colorFallback.Build(node);
+            }
+
+            // for Masonry
+            if (appearance.Name == "MasonryCMUSchema")
+            {
+                Vector2 masonryScale;
+                return BuildMasonryMaterial(appearance, builder, out masonryScale)
+                    ? new MaterialBuildResult { Material = builder, TextureScale = masonryScale }
+                    : _colorFallback.Build(node);
             }
 
             var diffuseFadeProperty = appearance.FindByName("generic_diffuse_image_fade");
@@ -76,12 +91,16 @@ namespace RevitTrueGltf.ExportStrategies
                 diffuseFade = (float)doubleProperty.Value;
             }
 
+            // Note on Transparency vs Alpha:
+            // In Revit's appearance asset, 'generic_transparency' ranges from 0.0 (fully opaque) to 1.0 (fully transparent).
+            // In glTF, the 'alpha' channel ranges from 1.0 (fully opaque) to 0.0 (fully transparent).
+            // Therefore, we must invert the value: alpha = 1.0 - transparency.
             var transparencyProperty = appearance.FindByName("generic_transparency");
-            float transparency = 1.0f;
+            float alpha = 1.0f;
             if (transparencyProperty != null)
             {
                 var doubleProperty = transparencyProperty as AssetPropertyDouble;
-                transparency = (float)doubleProperty.Value;
+                alpha = 1.0f - (float)doubleProperty.Value;
             }
 
             var tintColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -95,6 +114,7 @@ namespace RevitTrueGltf.ExportStrategies
                 }
             }
 
+            Vector2 textureScale = Vector2.One;
             Vector4 color = DefaultColor;
             var colorProperty = appearance.FindByName("generic_diffuse") ?? appearance.FindByName("opaque_albedo");
             if (colorProperty != null)
@@ -108,33 +128,45 @@ namespace RevitTrueGltf.ExportStrategies
                 // .UnifiedbitmapBitmap.  In earlier versions,
                 // you can still reference the string name 
                 // instead: "unifiedbitmap_Bitmap"
-                IList<string> texturePropertyNames = new List<string> { "unifiedbitmap_Bitmap", "UnifiedBitmapSchema" };
-                var textureProperty = FindTextureProperty(colorProperty, texturePropertyNames) as AssetPropertyString;
+                var textureAsset = FindTextureAsset(colorProperty);
                 bool isTextureApplied = false;
-                if (textureProperty != null)
+                if (textureAsset != null)
                 {
-                    var absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
-                    if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
                     {
-                        MemoryImage memoryImage = new MemoryImage(absoluteTexturePath);
-                        ImageBuilder imageBuilder = ImageBuilder.From(memoryImage, null);
-                        builder.WithBaseColor(imageBuilder);
-                        isTextureApplied = true;
+                        var absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            MemoryImage memoryImage = new MemoryImage(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage, null);
+                            builder.WithBaseColor(imageBuilder);
+                            isTextureApplied = true;
+
+                            float scaleX = GetTextureScale(textureAsset, "texture_RealWorldScaleX", "unifiedbitmap_RealWorldScaleX");
+                            float scaleY = GetTextureScale(textureAsset, "texture_RealWorldScaleY", "unifiedbitmap_RealWorldScaleY");
+                            textureScale = new Vector2(scaleX, scaleY);
+                        }
                     }
                 }
 
                 color = isTextureApplied
-                    ? RevitDiffuseColorToGltfBaseColor(color, transparency, diffuseFade)
-                    : new Vector4(color.X, color.Y, color.Z, transparency);
+                    ? RevitDiffuseColorToGltfBaseColor(color, alpha, diffuseFade)
+                    : new Vector4(color.X, color.Y, color.Z, alpha);
             }
             else
             {
-                color = new Vector4(node.Color.Red / 255f, node.Color.Green / 255f, node.Color.Blue / 255f, transparency);
+                color = new Vector4(node.Color.Red / 255f, node.Color.Green / 255f, node.Color.Blue / 255f, alpha);
             }
 
             // Apply tint color to the final color (creates a multiplied tint effect)
             color = new Vector4(color.X * tintColor.X, color.Y * tintColor.Y, color.Z * tintColor.Z, color.W);
             builder.WithBaseColor(color);
+
+            if (color.W < 1.0f)
+            {
+                builder.WithAlpha(AlphaMode.BLEND);
+            }
 
             // Roughness
             float? roughness = null;
@@ -166,22 +198,25 @@ namespace RevitTrueGltf.ExportStrategies
             var bumpProp = appearance.FindByName("generic_bump_map"); // ?? appearance.FindByName("surface_normal")) as AssetPropertyString
             if (bumpProp != null)
             {
-                IList<string> bumpTexturePropertyNames = new List<string> { "unifiedbitmap_Bitmap" };
-                var textureProperty = FindTextureProperty(bumpProp, bumpTexturePropertyNames) as AssetPropertyString;
-                if (textureProperty != null)
+                var textureAsset = FindTextureAsset(bumpProp);
+                if (textureAsset != null)
                 {
-                    string absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
-                    if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
                     {
-                        // Convert the height/bump map to a proper tangent-space normal map and get it as a MemoryImage
-                        MemoryImage memoryImage = BumpToNormalConverter.Convert(absoluteTexturePath);
-                        ImageBuilder imageBuilder = ImageBuilder.From(memoryImage);
-                        builder.WithNormal(imageBuilder);
+                        string absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            // Convert the height/bump map to a proper tangent-space normal map and get it as a MemoryImage
+                            MemoryImage memoryImage = BumpToNormalConverter.Convert(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage);
+                            builder.WithNormal(imageBuilder);
+                        }
                     }
                 }
             }
 
-            return builder;
+            return new MaterialBuildResult { Material = builder, TextureScale = textureScale };
         }
 
         // ── Glazing ────────────────────────────────────────────────────────────────────
@@ -252,6 +287,91 @@ namespace RevitTrueGltf.ExportStrategies
             return true;
         }
 
+        // ── Masonry ────────────────────────────────────────────────────────────────────
+
+        private bool BuildMasonryMaterial(Asset asset, MaterialBuilder materialBuilder, out Vector2 textureScale)
+        {
+            textureScale = Vector2.One;
+            Vector4 color = DefaultColor;
+            var colorProperty = asset.FindByName("masonrycmu_color");
+            bool isTextureApplied = false;
+
+            if (colorProperty != null)
+            {
+                color = GetColorVector(colorProperty);
+
+                var textureAsset = FindTextureAsset(colorProperty);
+                if (textureAsset != null)
+                {
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
+                    {
+                        var absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            MemoryImage memoryImage = new MemoryImage(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage, null);
+                            materialBuilder.WithBaseColor(imageBuilder);
+                            isTextureApplied = true;
+
+                            float scaleX = GetTextureScale(textureAsset, "texture_RealWorldScaleX", "unifiedbitmap_RealWorldScaleX");
+                            float scaleY = GetTextureScale(textureAsset, "texture_RealWorldScaleY", "unifiedbitmap_RealWorldScaleY");
+                            textureScale = new Vector2(scaleX, scaleY);
+                        }
+                    }
+                }
+            }
+
+            var tintColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+            var tintToggleProp = asset.FindByName("common_Tint_toggle") as AssetPropertyBoolean;
+            if (tintToggleProp != null && tintToggleProp.Value)
+            {
+                var tintProperty = asset.FindByName("common_Tint_color");
+                if (tintProperty != null)
+                {
+                    tintColor = GetColorVector(tintProperty);
+                }
+            }
+
+            // Apply tint color
+            color = new Vector4(color.X * tintColor.X, color.Y * tintColor.Y, color.Z * tintColor.Z, color.W);
+
+            if (isTextureApplied)
+            {
+                materialBuilder.WithBaseColor(tintColor);
+            }
+            else
+            {
+                materialBuilder.WithBaseColor(color);
+            }
+
+            // Roughness / Metalness: Non-metallic, typically rough (roughness = 0.8)
+            materialBuilder.WithMetallicRoughness(0.0f, 0.8f);
+
+            // Bump map / Normal map
+            var bumpProp = asset.FindByName("masonrycmu_pattern_map");
+            if (bumpProp != null)
+            {
+                var textureAsset = FindTextureAsset(bumpProp);
+                if (textureAsset != null)
+                {
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
+                    {
+                        string absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            MemoryImage memoryImage = BumpToNormalConverter.Convert(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage);
+                            materialBuilder.WithNormal(imageBuilder);
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
         // ── Texture Library Initialization ─────────────────────────────────────────────
 
         private static IList<MaterialLib> BuildMaterialLibs()
@@ -313,44 +433,6 @@ namespace RevitTrueGltf.ExportStrategies
             return new Vector4(1f, 1f, 1f, 1f);
         }
 
-        private AssetProperty FindTextureProperty(AssetProperty assetProperty, IList<string> texturePropertyNames)
-        {
-            if (assetProperty.Type == AssetPropertyType.Asset)
-            {
-                var asset = assetProperty as Asset;
-                return FindTextureProperty(asset, texturePropertyNames);
-            }
-            else
-            {
-                for (int i = 0; i < assetProperty.NumberOfConnectedProperties; i++)
-                {
-                    var textureProperty = FindTextureProperty(assetProperty.GetConnectedProperty(i), texturePropertyNames);
-                    if (textureProperty != null) return textureProperty;
-                }
-                return null;
-            }
-        }
-
-        private AssetProperty FindTextureProperty(Asset asset, IList<string> texturePropertyNames)
-        {
-            var assetTypeProp = asset.FindByName("assettype");
-            if (assetTypeProp == null || (assetTypeProp as AssetPropertyString).Value != "texture")
-                return null;
-
-            foreach (var name in texturePropertyNames)
-            {
-                var textureProp = asset.FindByName(name);
-                if (textureProp != null) return textureProp;
-            }
-
-            for (int i = 0; i < asset.Size; i++)
-            {
-                var textureProp = FindTextureProperty(asset[i], texturePropertyNames);
-                if (textureProp != null) return textureProp;
-            }
-
-            return null;
-        }
 
         private string GetAbsoluteTexturePath(string rawTexturePath)
         {
@@ -379,18 +461,18 @@ namespace RevitTrueGltf.ExportStrategies
             return null;
         }
 
-        private Vector4 RevitDiffuseColorToGltfBaseColor(Vector4 diffuseColor, float transparency, float diffuseFade)
+        private Vector4 RevitDiffuseColorToGltfBaseColor(Vector4 diffuseColor, float alpha, float diffuseFade)
         {
             if (diffuseFade >= 0.99f)
             {
                 // Case A: should set texture
                 // gltfMaterial.BaseColorTexture = diffuseTexture; // Assign texture
-                return new Vector4(1.0f, 1.0f, 1.0f, transparency);
+                return new Vector4(1.0f, 1.0f, 1.0f, alpha);
             }
             else if (diffuseFade <= 0.01f)
             {
                 // Case B: no texture
-                return new Vector4(diffuseColor.X, diffuseColor.Y, diffuseColor.Z, transparency);
+                return new Vector4(diffuseColor.X, diffuseColor.Y, diffuseColor.Z, alpha);
             }
             else
             {
@@ -400,8 +482,183 @@ namespace RevitTrueGltf.ExportStrategies
                     diffuseColor.X * (1.0f - diffuseFade) + 1.0f * diffuseFade, // R
                     diffuseColor.Y * (1.0f - diffuseFade) + 1.0f * diffuseFade, // G
                     diffuseColor.Z * (1.0f - diffuseFade) + 1.0f * diffuseFade, // B
-                    transparency // A remains unchanged
+                    alpha // A remains unchanged
                 );
+            }
+        }
+
+        private Asset FindTextureAsset(AssetProperty assetProperty)
+        {
+            if (assetProperty == null) return null;
+
+            if (assetProperty.Type == AssetPropertyType.Asset)
+            {
+                var asset = assetProperty as Asset;
+                var assetTypeProp = asset.FindByName("assettype");
+                if (assetTypeProp != null && (assetTypeProp as AssetPropertyString).Value == "texture")
+                {
+                    return asset;
+                }
+                return FindTextureAsset(asset);
+            }
+            else
+            {
+                for (int i = 0; i < assetProperty.NumberOfConnectedProperties; i++)
+                {
+                    var textureAsset = FindTextureAsset(assetProperty.GetConnectedProperty(i));
+                    if (textureAsset != null) return textureAsset;
+                }
+                return null;
+            }
+        }
+
+        private Asset FindTextureAsset(Asset asset)
+        {
+            if (asset == null) return null;
+
+            var assetTypeProp = asset.FindByName("assettype");
+            if (assetTypeProp != null && (assetTypeProp as AssetPropertyString).Value == "texture")
+            {
+                return asset;
+            }
+
+            for (int i = 0; i < asset.Size; i++)
+            {
+                var textureAsset = FindTextureAsset(asset[i]);
+                if (textureAsset != null) return textureAsset;
+            }
+
+            return null;
+        }
+
+        private float GetTextureScale(Asset textureAsset, params string[] propertyNames)
+        {
+            foreach (var propertyName in propertyNames)
+            {
+                var prop = textureAsset.FindByName(propertyName);
+                if (prop != null)
+                {
+                    if (prop is AssetPropertyDistance distProp)
+                    {
+#if REVIT2020
+                        return (float)Autodesk.Revit.DB.UnitUtils.ConvertToInternalUnits(distProp.Value, distProp.DisplayUnitType);
+#else
+                        return (float)Autodesk.Revit.DB.UnitUtils.ConvertToInternalUnits(distProp.Value, distProp.GetUnitTypeId());
+#endif
+                    }
+                    else if (prop is AssetPropertyDouble doubleProp)
+                    {
+                        return (float)doubleProp.Value;
+                    }
+                }
+            }
+            return 1.0f;
+        }
+
+        private static void DumpAsset(Asset asset)
+        {
+            Debug.WriteLine($"=== Asset Dump: {asset.Name} ({asset.Size} properties) ===");
+            for (int i = 0; i < asset.Size; i++)
+            {
+                DumpAssetProperty(asset[i], 0);
+            }
+            Debug.WriteLine("========================================");
+        }
+
+        private static void DumpAssetProperty(AssetProperty prop, int indentLevel)
+        {
+            if (prop == null) return;
+            string indent = new string(' ', indentLevel * 2);
+            string typeName = prop.GetType().Name;
+            string propName = prop.Name;
+            string valueStr = "";
+
+            try
+            {
+                if (prop is AssetPropertyDistance distProp)
+                {
+#if REVIT2020
+                    valueStr = $"{distProp.Value} (Unit: {distProp.DisplayUnitType})";
+#else
+                    valueStr = $"{distProp.Value} (Unit: {distProp.GetUnitTypeId().TypeId})";
+#endif
+                }
+                else if (prop is AssetPropertyString stringProp)
+                {
+                    valueStr = stringProp.Value;
+                }
+                else if (prop is AssetPropertyDouble doubleProp)
+                {
+                    valueStr = doubleProp.Value.ToString();
+                }
+                else if (prop is AssetPropertyInteger intProp)
+                {
+                    valueStr = intProp.Value.ToString();
+                }
+                else if (prop is AssetPropertyBoolean boolProp)
+                {
+                    valueStr = boolProp.Value.ToString();
+                }
+                else if (prop is AssetPropertyDoubleArray4d double4dProp)
+                {
+                    var vals = double4dProp.GetValueAsDoubles();
+                    valueStr = "[" + string.Join(", ", vals) + "]";
+                }
+                else if (prop is AssetPropertyList listProp)
+                {
+                    var list = listProp.GetValue();
+                    Debug.WriteLine($"{indent}- Property: {propName} (Type: {typeName}, List size: {list.Count})");
+                    foreach (var subProp in list)
+                    {
+                        DumpAssetProperty(subProp, indentLevel + 1);
+                    }
+                    return;
+                }
+                else if (prop is Asset childAsset)
+                {
+                    Debug.WriteLine($"{indent}- Property: {propName} (Type: {typeName}, Sub-Asset Name: {childAsset.Name})");
+                    for (int i = 0; i < childAsset.Size; i++)
+                    {
+                        DumpAssetProperty(childAsset[i], indentLevel + 1);
+                    }
+                    return;
+                }
+                else
+                {
+                    // Fallback using reflection to find a Value property if present
+                    var valuePropInfo = prop.GetType().GetProperty("Value");
+                    if (valuePropInfo != null)
+                    {
+                        valueStr = valuePropInfo.GetValue(prop)?.ToString() ?? "null";
+                    }
+                    else
+                    {
+                        valueStr = $"[{typeName}]";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                valueStr = $"[Error reading: {ex.Message}]";
+            }
+
+            Debug.WriteLine($"{indent}- Property: {propName} (Type: {typeName}) = {valueStr}");
+
+            // Also check connected properties recursively
+            try
+            {
+                if (prop.NumberOfConnectedProperties > 0)
+                {
+                    Debug.WriteLine($"{indent}  Connected Properties ({prop.NumberOfConnectedProperties}):");
+                    for (int i = 0; i < prop.NumberOfConnectedProperties; i++)
+                    {
+                        DumpAssetProperty(prop.GetConnectedProperty(i), indentLevel + 1);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"{indent}  [Error reading connected properties: {ex.Message}]");
             }
         }
     }

@@ -66,7 +66,7 @@ namespace RevitTrueGltf
 
         private SceneBuilder _sceneBuilder = new SceneBuilder();
         private readonly Dictionary<ElementId, MeshBuilderType> _meshBuilderCache = new Dictionary<ElementId, MeshBuilderType>();
-        private readonly Dictionary<ElementId, MaterialBuilder> _materialBuilderCache = new Dictionary<ElementId, MaterialBuilder>();
+        private readonly Dictionary<ElementId, MaterialBuildResult> _materialBuilderCache = new Dictionary<ElementId, MaterialBuildResult>();
 
         private NodeBuilder _rootNode;
         // Folder node for all physical elements; persisted as a field because GetOrCreateElementNode() references it throughout export.
@@ -348,12 +348,12 @@ namespace RevitTrueGltf
                 frame.MaterialId = node.MaterialId;
                 if (!_materialBuilderCache.ContainsKey(frame.MaterialId))
                 {
-                    var materialBuilder = _materialStrategy.Build(node);
-                    if (null == materialBuilder)
+                    var materialBuildResult = _materialStrategy.Build(node);
+                    if (null == materialBuildResult)
                     {
                         return;
                     }
-                    _materialBuilderCache.Add(frame.MaterialId, materialBuilder);
+                    _materialBuilderCache.Add(frame.MaterialId, materialBuildResult);
                 }
             }
             catch (Exception)
@@ -370,7 +370,11 @@ namespace RevitTrueGltf
                 if (frame == null) return;
 
                 MaterialBuilder materialBuilder = null;
-                if (!_materialBuilderCache.TryGetValue(frame.MaterialId, out materialBuilder))
+                if (_materialBuilderCache.TryGetValue(frame.MaterialId, out var cachedResult))
+                {
+                    materialBuilder = cachedResult.Material;
+                }
+                else
                 {
                     materialBuilder = new MaterialBuilder("Default").WithBaseColor(new Vector4(0.8f, 0.8f, 0.8f, 1.0f));
                 }
@@ -504,8 +508,22 @@ namespace RevitTrueGltf
                 Normal = ConvertNormal(normal)
                 // Tangent intentionally left as default; caller sets it after ComputeTangent
             };
+
+            float scaleX = 1.0f;
+            float scaleY = 1.0f;
+            var frame = CurrentFrame;
+            if (frame != null && frame.MaterialId != ElementId.InvalidElementId)
+            {
+                if (_materialBuilderCache.TryGetValue(frame.MaterialId, out var cachedResult))
+                {
+                    var scale = cachedResult.TextureScale;
+                    if (scale.X > 0.001f) scaleX = scale.X;
+                    if (scale.Y > 0.001f) scaleY = scale.Y;
+                }
+            }
+
             // glTF UV origin is top-left (V increases downward); Revit UV origin is bottom-left
-            var texture = new VertexTexture1 { TexCoord = new Vector2((float)uv.U, 1f - (float)uv.V) };
+            var texture = new VertexTexture1 { TexCoord = new Vector2((float)uv.U / scaleX, 1f - (float)uv.V / scaleY) };
             return new VertexBuilderType(geometry, texture);
         }
 

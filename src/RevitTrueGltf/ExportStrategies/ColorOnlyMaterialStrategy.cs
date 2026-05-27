@@ -13,7 +13,7 @@ namespace RevitTrueGltf.ExportStrategies
     /// </summary>
     public class ColorOnlyMaterialStrategy : IMaterialStrategy
     {
-        public MaterialBuilder Build(MaterialNode node)
+        public MaterialBuildResult Build(MaterialNode node)
         {
             var color = node.Color;
             var alpha = (float)(1.0 - node.Transparency);
@@ -21,7 +21,7 @@ namespace RevitTrueGltf.ExportStrategies
                 .WithBaseColor(new Vector4(color.Red / 255f, color.Green / 255f, color.Blue / 255f, alpha));
             if (node.Transparency > 0)
                 builder.WithAlpha(AlphaMode.BLEND);
-            return builder;
+            return new MaterialBuildResult { Material = builder, TextureScale = Vector2.One };
         }
     }
 }
