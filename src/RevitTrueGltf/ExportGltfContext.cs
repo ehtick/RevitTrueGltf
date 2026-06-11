@@ -348,7 +348,17 @@ namespace RevitTrueGltf
                 frame.MaterialId = node.MaterialId;
                 if (!_materialBuilderCache.ContainsKey(frame.MaterialId))
                 {
-                    var materialBuildResult = _materialStrategy.Build(node);
+                    string materialName = node.NodeName;
+                    if (frame.MaterialId != ElementId.InvalidElementId)
+                    {
+                        var material = _document.GetElement(frame.MaterialId) as Material;
+                        if (material != null && !string.IsNullOrEmpty(material.Name))
+                        {
+                            materialName = material.Name;
+                        }
+                    }
+
+                    var materialBuildResult = _materialStrategy.Build(node, materialName);
                     if (null == materialBuildResult)
                     {
                         return;

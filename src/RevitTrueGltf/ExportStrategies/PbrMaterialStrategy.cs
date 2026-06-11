@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 
 namespace RevitTrueGltf.ExportStrategies
@@ -52,26 +53,26 @@ namespace RevitTrueGltf.ExportStrategies
 
         // ── IMaterialStrategy ──────────────────────────────────────────────────────────
 
-        public MaterialBuildResult Build(MaterialNode node)
+        public MaterialBuildResult Build(MaterialNode node, string materialName)
         {
             if (node == null)
-                return _colorFallback.Build(node);
+                return _colorFallback.Build(node, materialName);
 
             var appearance = node.GetAppearance();
             // node.MaterialId == ElementId.InvalidElementId, maybe it is by category
             if (appearance == null || node.MaterialId == ElementId.InvalidElementId)
             {
-                return _colorFallback.Build(node);
+                return _colorFallback.Build(node, materialName);
             }
 
-            var builder = new MaterialBuilder(node.NodeName);
+            var builder = new MaterialBuilder(materialName);
 
             // for material similar to Glass
             if (appearance.Name == "GlazingSchema")
             {
                 return BuildGlazingMaterial(appearance, builder)
                     ? new MaterialBuildResult { Material = builder, TextureScale = Vector2.One }
-                    : _colorFallback.Build(node);
+                    : _colorFallback.Build(node, materialName);
             }
 
             // for Masonry
@@ -80,7 +81,16 @@ namespace RevitTrueGltf.ExportStrategies
                 Vector2 masonryScale;
                 return BuildMasonryMaterial(appearance, builder, out masonryScale)
                     ? new MaterialBuildResult { Material = builder, TextureScale = masonryScale }
-                    : _colorFallback.Build(node);
+                    : _colorFallback.Build(node, materialName);
+            }
+
+            // for Concrete
+            if (appearance.Name == "ConcreteSchema")
+            {
+                Vector2 concreteScale;
+                return BuildConcreteMaterial(appearance, builder, out concreteScale)
+                    ? new MaterialBuildResult { Material = builder, TextureScale = concreteScale }
+                    : _colorFallback.Build(node, materialName);
             }
 
             var diffuseFadeProperty = appearance.FindByName("generic_diffuse_image_fade");
@@ -288,7 +298,6 @@ namespace RevitTrueGltf.ExportStrategies
         }
 
         // ── Masonry ────────────────────────────────────────────────────────────────────
-
         private bool BuildMasonryMaterial(Asset asset, MaterialBuilder materialBuilder, out Vector2 textureScale)
         {
             textureScale = Vector2.One;
@@ -372,8 +381,91 @@ namespace RevitTrueGltf.ExportStrategies
             return true;
         }
 
-        // ── Texture Library Initialization ─────────────────────────────────────────────
+        // ── Concrete ───────────────────────────────────────────────────────────────────
+        private bool BuildConcreteMaterial(Asset asset, MaterialBuilder materialBuilder, out Vector2 textureScale)
+        {
+            textureScale = Vector2.One;
+            Vector4 color = DefaultColor;
+            var colorProperty = asset.FindByName("concrete_color");
+            bool isTextureApplied = false;
 
+            if (colorProperty != null)
+            {
+                color = GetColorVector(colorProperty);
+
+                var textureAsset = FindTextureAsset(colorProperty);
+                if (textureAsset != null)
+                {
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
+                    {
+                        var absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            MemoryImage memoryImage = new MemoryImage(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage, null);
+                            materialBuilder.WithBaseColor(imageBuilder);
+                            isTextureApplied = true;
+
+                            float scaleX = GetTextureScale(textureAsset, "texture_RealWorldScaleX", "unifiedbitmap_RealWorldScaleX");
+                            float scaleY = GetTextureScale(textureAsset, "texture_RealWorldScaleY", "unifiedbitmap_RealWorldScaleY");
+                            textureScale = new Vector2(scaleX, scaleY);
+                        }
+                    }
+                }
+            }
+
+            var tintColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+            var tintToggleProp = asset.FindByName("common_Tint_toggle") as AssetPropertyBoolean;
+            if (tintToggleProp != null && tintToggleProp.Value)
+            {
+                var tintProperty = asset.FindByName("common_Tint_color");
+                if (tintProperty != null)
+                {
+                    tintColor = GetColorVector(tintProperty);
+                }
+            }
+
+            // Apply tint color
+            color = new Vector4(color.X * tintColor.X, color.Y * tintColor.Y, color.Z * tintColor.Z, color.W);
+
+            if (isTextureApplied)
+            {
+                materialBuilder.WithBaseColor(tintColor);
+            }
+            else
+            {
+                materialBuilder.WithBaseColor(color);
+            }
+
+            // Roughness / Metalness: Non-metallic, typically rough (roughness = 0.8)
+            materialBuilder.WithMetallicRoughness(0.0f, 0.8f);
+
+            // Bump map / Normal map
+            var bumpProp = asset.FindByName("concrete_bump_map") ?? asset.FindByName("concrete_bm_map");
+            if (bumpProp != null)
+            {
+                var textureAsset = FindTextureAsset(bumpProp);
+                if (textureAsset != null)
+                {
+                    var textureProperty = textureAsset.FindByName("unifiedbitmap_Bitmap") as AssetPropertyString;
+                    if (textureProperty != null)
+                    {
+                        string absoluteTexturePath = GetAbsoluteTexturePath(textureProperty.Value);
+                        if (!string.IsNullOrEmpty(absoluteTexturePath) && File.Exists(absoluteTexturePath))
+                        {
+                            MemoryImage memoryImage = BumpToNormalConverter.Convert(absoluteTexturePath);
+                            ImageBuilder imageBuilder = ImageBuilder.From(memoryImage);
+                            materialBuilder.WithNormal(imageBuilder);
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        // ── Texture Library Initialization ─────────────────────────────────────────────
         private static IList<MaterialLib> BuildMaterialLibs()
         {
             var libs = new List<MaterialLib>();
@@ -418,6 +510,9 @@ namespace RevitTrueGltf.ExportStrategies
                     (MaterialLibResolution)int.Parse(resolutionName), libPath));
             }
 
+            // Sort descending so High (3) is checked before Low (1)
+            materialLib.LibPaths = materialLib.LibPaths.OrderByDescending(x => x.Key).ToList();
+
             return materialLib;
         }
 
@@ -434,6 +529,8 @@ namespace RevitTrueGltf.ExportStrategies
         }
 
 
+        private static readonly Dictionary<string, string> _textureSearchCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         private string GetAbsoluteTexturePath(string rawTexturePath)
         {
             if (_materialLibs == null || _materialLibs.Count <= 0) return null;
@@ -447,13 +544,72 @@ namespace RevitTrueGltf.ExportStrategies
                 if (Path.IsPathRooted(rawPath) && File.Exists(rawPath))
                     return rawPath;
 
-                foreach (var materialLib in _materialLibs)
+                // Check cache first
+                if (_textureSearchCache.TryGetValue(rawPath, out var cachedPath))
+                    return cachedPath;
+
+                string fileName = Path.GetFileName(rawPath);
+
+                // Priority 1: Prism -> Generic
+                // Priority 2: Resolution 3 -> 2 -> 1
+                // First attempt: Direct path combination and common subdirectories
+                foreach (var materialLib in _materialLibs.OrderByDescending(l => l.Type))
                 {
-                    if (materialLib.Type != MaterialLibType.Prism) continue;
                     foreach (var libPath in materialLib.LibPaths)
                     {
-                        string absoluteFilePath = Path.Combine(libPath.Value, rawPath);
-                        if (File.Exists(absoluteFilePath)) return absoluteFilePath;
+                        string resolutionStr = ((int)libPath.Key).ToString();
+                        string resBasePath = libPath.Value;
+
+                        // If the registry path doesn't already end with the resolution folder (1, 2, or 3), append it.
+                        if (!resBasePath.TrimEnd('\\', '/').EndsWith(resolutionStr))
+                        {
+                            resBasePath = Path.Combine(resBasePath, resolutionStr);
+                        }
+
+                        string absoluteFilePath = Path.Combine(resBasePath, rawPath);
+                        if (File.Exists(absoluteFilePath))
+                        {
+                            _textureSearchCache[rawPath] = absoluteFilePath;
+                            return absoluteFilePath;
+                        }
+
+                        // Try "Mats" subdirectory directly to skip deep search
+                        string matsFilePath = Path.Combine(resBasePath, "Mats", rawPath);
+                        if (File.Exists(matsFilePath))
+                        {
+                            _textureSearchCache[rawPath] = matsFilePath;
+                            return matsFilePath;
+                        }
+                    }
+                }
+
+                // Second attempt: Deep search in all libraries
+                foreach (var materialLib in _materialLibs.OrderByDescending(l => l.Type))
+                {
+                    foreach (var libPath in materialLib.LibPaths)
+                    {
+                        string resolutionStr = ((int)libPath.Key).ToString();
+                        string resBasePath = libPath.Value;
+                        if (!resBasePath.TrimEnd('\\', '/').EndsWith(resolutionStr))
+                        {
+                            resBasePath = Path.Combine(resBasePath, resolutionStr);
+                        }
+
+                        try
+                        {
+                            if (!Directory.Exists(resBasePath)) continue;
+
+                            var foundPath = Directory.EnumerateFiles(resBasePath, fileName, SearchOption.AllDirectories).FirstOrDefault();
+                            if (!string.IsNullOrEmpty(foundPath))
+                            {
+                                _textureSearchCache[rawPath] = foundPath;
+                                return foundPath;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // Ignore access exceptions during search
+                        }
                     }
                 }
             }

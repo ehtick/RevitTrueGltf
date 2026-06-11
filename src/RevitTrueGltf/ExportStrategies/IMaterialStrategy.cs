@@ -19,6 +19,6 @@ namespace RevitTrueGltf.ExportStrategies
     /// </summary>
     public interface IMaterialStrategy
     {
-        MaterialBuildResult Build(MaterialNode node);
+        MaterialBuildResult Build(MaterialNode node, string materialName);
     }
 }
